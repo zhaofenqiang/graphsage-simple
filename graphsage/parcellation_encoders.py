@@ -7,20 +7,21 @@ class Encoder(nn.Module):
     """
     Encodes a node's using 'convolutional' GraphSage approach
     """
-    def __init__(self, features, feature_dim, 
+    def __init__(self, feature_dim, 
             embed_dim, adj_lists, aggregator, 
             feature_transform=False): 
         super(Encoder, self).__init__()
 
-        self.features = features
         self.feat_dim = feature_dim
         self.adj_lists = adj_lists
         self.aggregator = aggregator
 
         self.embed_dim = embed_dim
         self.weight = nn.Parameter(
-                torch.FloatTensor(embed_dim, 2 * self.feat_dim))
+                torch.FloatTensor(feature_dim, embed_dim))
         init.xavier_uniform(self.weight)
+ 
+        self.bn = nn.BatchNorm1d(embed_dim)
         self.relu = nn.LeakyReLU()
 
     def forward(self, raw_features, nodes):
@@ -32,11 +33,7 @@ class Encoder(nn.Module):
 
         neigh_feats = self.aggregator.forward(raw_features, nodes, [self.adj_lists[node] for node in nodes])
 
-        if self.features:      
-            self_feats = self.features(raw_features, torch.LongTensor(nodes))
-        else:
-            self_feats = raw_features(torch.LongTensor(nodes)).cuda()
-                
-        combined = torch.cat([self_feats, neigh_feats], dim=1)
-        combined = self.relu(self.weight.mm(combined.t()))
-        return combined
+        x = neigh_feats.mm(self.weight)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x

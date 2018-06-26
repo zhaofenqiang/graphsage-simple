@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import init
@@ -11,7 +12,7 @@ class MeanAggregator(nn.Module):
     """
     Aggregates a node's embeddings using mean of neighbors' embeddings
     """
-    def __init__(self, features, embed_dim): 
+    def __init__(self, features, feature_dim, embed_dim): 
         """
         Initializes the aggregator for a specific graph.
 
@@ -23,9 +24,13 @@ class MeanAggregator(nn.Module):
         super(MeanAggregator, self).__init__()
 
         self.features = features
+        self.feat_dim = feature_dim
         self.embed_dim = embed_dim
-        self.weight = nn.Parameter(torch.FloatTensor(embed_dim, 2 * self.feat_dim))
+        self.weight = nn.Parameter(torch.FloatTensor(7 * feature_dim, embed_dim))
+        self.bn = nn.BatchNorm1d(embed_dim)
+        self.relu = nn.LeakyReLU()
         init.xavier_uniform(self.weight)
+ 
 
     def forward(self, raw_features, nodes, to_neighs):
         """
@@ -46,20 +51,25 @@ class MeanAggregator(nn.Module):
         
         num_sample --- number of neighbors to sample. No sampling if None.
         """
-        samp_neighs = to_neighs
-        unique_nodes_list = list(set.union(*samp_neighs))
-        unique_nodes = {n:i for i,n in enumerate(unique_nodes_list)}
-        mask = Variable(torch.zeros(len(samp_neighs), len(unique_nodes)))
-        column_indices = [unique_nodes[n] for samp_neigh in samp_neighs for n in samp_neigh]
-        row_indices = [i for i in range(len(samp_neighs)) for j in range(len(samp_neighs[i]))]
-        mask[row_indices, column_indices] = 1
-        mask = mask.cuda()
-        num_neigh = mask.sum(1, keepdim=True)
-        mask = mask.div(num_neigh)
-        if self.features:
-            embed_matrix = self.features(raw_features, torch.LongTensor(unique_nodes_list))
-        else:
-            embed_matrix = raw_features(torch.LongTensor(unique_nodes_list)).cuda()
+
+        for i, samp_neigh in enumerate(to_neighs):
             
-        to_feats = mask.mm(embed_matrix)
-        return to_feats
+            if self.features:
+                neigh_mat = self.features(raw_features, torch.LongTensor(list(samp_neigh)))
+            else:
+                neigh_mat = raw_features(torch.LongTensor(list(samp_neigh))).cuda()
+            
+            if len(neigh_mat) == 6:
+                neigh_mat = torch.cat((neigh_mat, torch.mean(neigh_mat, 0, True)), 0)
+            neigh_mat = neigh_mat.contiguous()
+            neigh_mat = neigh_mat.view(1, 7 * self.feat_dim)
+            if i == 0:
+                mat = neigh_mat
+            else:
+                mat = torch.cat((mat,neigh_mat),0)
+                
+
+        x = mat.mm(self.weight)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x

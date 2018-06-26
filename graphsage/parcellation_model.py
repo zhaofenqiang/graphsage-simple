@@ -19,7 +19,7 @@ writer = SummaryWriter('log/first')
 
 learning_rate = 0.1
 wd = 0.0001
-batch_size = 4
+batch_size = 1024
 train_dataset_path = '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/90/train'
 val_dataset_path = '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/90/val'
 files = sorted(glob.glob(os.path.join(train_dataset_path, '*.mat'))) 
@@ -32,39 +32,38 @@ class SupervisedGraphSage(nn.Module):
 
         adj_mat = sio.loadmat('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat.mat')
         adj_mat = adj_mat['adj_mat']
+        for i in range(len(adj_mat)):
+            adj_mat[i,i] = 1
         non_zero_indices = np.nonzero(adj_mat)
         adj_lists = defaultdict(set)
         for i in range(len(non_zero_indices[0])):
             adj_lists[non_zero_indices[0][i]].add(non_zero_indices[1][i])
 
-        self.agg1 = MeanAggregator(features=None)
+        self.agg1 = MeanAggregator(features=None, feature_dim=3, embed_dim=32)
         #features, feature_dim, embed_dim, adj_lists, aggregator,num_sample=10,base_model=None, gcn=False, cuda=False, feature_transform=False
-        self.enc1 = Encoder(None, 3, 256, adj_lists, self.agg1)
-        self.agg2 = MeanAggregator(lambda raw_features, nodes : self.enc1(raw_features, nodes).t())
-        self.enc2 = Encoder(lambda raw_features, nodes : self.enc1(raw_features, nodes).t(), self.enc1.embed_dim, 
-                            512, adj_lists, self.agg2)    
-        self.agg3 = MeanAggregator(lambda raw_features, nodes : self.enc2(raw_features, nodes).t())
-        self.enc3 = Encoder(lambda raw_features, nodes : self.enc2(raw_features, nodes).t(), self.enc2.embed_dim, 
-                            512, adj_lists, self.agg3)    
-        self.agg4 = MeanAggregator(lambda raw_features, nodes : self.enc3(raw_features, nodes).t())
-        self.enc4 = Encoder(lambda raw_features, nodes : self.enc3(raw_features, nodes).t(), self.enc3.embed_dim, 
-                            512, adj_lists, self.agg4)    
-        #self.agg5 = MeanAggregator(lambda raw_features, nodes : self.enc4(raw_features, nodes).t())
-        #self.enc5 = Encoder(lambda raw_features, nodes : self.enc4(raw_features, nodes).t(), self.enc4.embed_dim, 
-         #                   256, adj_lists, self.agg5)    
-        self.weight = nn.Parameter(torch.FloatTensor(num_classes, self.enc4.embed_dim))
+        self.enc1 = Encoder(self.agg1.embed_dim, 32, adj_lists, self.agg1)
+        self.agg2 = MeanAggregator(lambda raw_features, nodes : self.enc1(raw_features, nodes), self.enc1.embed_dim, 32)
+        self.enc2 = Encoder(self.agg2.embed_dim, 64, adj_lists, self.agg2)    
+        self.agg3 = MeanAggregator(lambda raw_features, nodes : self.enc2(raw_features, nodes), self.enc2.embed_dim, 64)
+        self.enc3 = Encoder(self.agg3.embed_dim, 64, adj_lists, self.agg3)    
+        self.agg4 = MeanAggregator(lambda raw_features, nodes : self.enc3(raw_features, nodes), self.enc3.embed_dim, 32)
+        self.enc4 = Encoder(self.agg4.embed_dim, 32, adj_lists, self.agg4)    
+        # self.agg5 = MeanAggregator(lambda raw_features, nodes : self.enc4(raw_features, nodes), self.enc4.embed_dim, 64)
+        # self.enc5 = Encoder(self.agg5.embed_dim, 64, adj_lists, self.agg5)    
+        self.weight = nn.Parameter(torch.FloatTensor(self.enc4.embed_dim, num_classes))
         init.xavier_uniform(self.weight)
         
     def forward(self, raw_features, nodes):
         embeds = self.enc4(raw_features, nodes)
-        scores = self.weight.mm(embeds)
-        return scores.t()
+        scores = embeds.mm(self.weight)
+        return scores
       
 
 batches_per_file = int(math.ceil(10242.0/batch_size))
 model = SupervisedGraphSage(36)
 model.cuda()
-optimizer = torch.optim.SGD(filter(lambda p : p.requires_grad, model.parameters()), lr=0, weight_decay=wd)
+#model.load_state_dict(torch.load('/home/zfq/graphsage-simple/state.pkl'))
+optimizer = torch.optim.Adam(filter(lambda p : p.requires_grad, model.parameters()), lr=0, weight_decay=wd)
 criterion = nn.CrossEntropyLoss()
 
 def val_during_training():
@@ -75,6 +74,7 @@ def val_during_training():
         file = files[file_idx]
         feats = sio.loadmat(file)
         feats = feats['data']
+        feats = (feats - np.tile(np.min(feats,0), (len(feats),1)))/(np.tile(np.max(feats,0), (len(feats),1)) - np.tile(np.min(feats,0), (len(feats),1)))
         label = sio.loadmat(file[:-4] + '.label')
         label = label['label']    
         label = np.squeeze(label)
@@ -133,23 +133,25 @@ def get_learning_rate(epoch):
             return lr * learning_rate
     return lrs[-1] * learning_rate
 
+#epoch = file_idx = local_batch_idx = 0
 for epoch in range(100):
     lr = get_learning_rate(epoch)
     print("learning rate = {} and batch size = {}".format(lr, batches_per_file))
     for p in optimizer.param_groups:
-       # print(p)
+        #print(p)
         p['lr'] = lr
     for file_idx in range(len(files)):
         file = files[file_idx]
         feats = sio.loadmat(file)
         feats = feats['data']
+        norm_feats = (feats - np.tile(np.min(feats,0), (len(feats),1)))/(np.tile(np.max(feats,0), (len(feats),1)) - np.tile(np.min(feats,0), (len(feats),1)))
         label = sio.loadmat(file[:-4] + '.label')
         label = label['label']    
         label = np.squeeze(label)
         label = label - 1
         
         features = nn.Embedding(10242, 3)
-        features.weight = nn.Parameter(torch.FloatTensor(feats), requires_grad=False)
+        features.weight = nn.Parameter(torch.FloatTensor(norm_feats), requires_grad=False)
         
         for local_batch_idx in range(batches_per_file):
             model.train()
