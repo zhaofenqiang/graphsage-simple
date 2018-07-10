@@ -46,9 +46,8 @@ class BrainSphere(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.files)
 
-
 learning_rate = 0.1
-momentum = 0.9
+momentum = 0.99
 wd = 0.0001
 batch_size = 1
 train_dataset_path = '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/90/train'
@@ -58,33 +57,12 @@ train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_s
 val_dataset = BrainSphere(val_dataset_path)
 val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
 
-
-adj_mat = sio.loadmat('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat.mat')
-adj_order = sio.loadmat('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order.mat')
-adj_mat = adj_mat['adj_mat']
-adj_order = adj_order['adj_order']
-neigh_orders = np.zeros(len(adj_mat) * 7).astype(np.int64) - 1
-for i in range(len(adj_mat)):
-    raw_neigh_order = list(np.nonzero(adj_mat[i]))[0]
-    if len(raw_neigh_order) == 5:
-        order = (adj_order[i][0:-1] - 1).astype(np.int64)
-        correct_neigh_order = raw_neigh_order[order]
-        correct_neigh_order = np.append(correct_neigh_order, i)
-    else:
-        order = (adj_order[i] - 1).astype(np.int64)
-        correct_neigh_order = raw_neigh_order[order]
-    assert(len(correct_neigh_order) == 6)
-    correct_neigh_order = np.append(correct_neigh_order, i)
-    neigh_orders[i*7: (i+1)*7] = correct_neigh_order
-
-
-model = BrainSphereCNN(36, neigh_orders)
+model = BrainSphereCNN(36)
 print("{} paramerters in total".format(sum(x.numel() for x in model.parameters())))
 model.cuda()
 optimizer = torch.optim.SGD(model.parameters(), lr=0, momentum=momentum, weight_decay=wd)
 criterion = nn.CrossEntropyLoss()
 
- 
 def train_step(data, target):
     model.train()
     data, target = data.cuda(), target.cuda()
@@ -103,7 +81,7 @@ def train_step(data, target):
 
 def get_learning_rate(epoch):
     limits = [3, 5, 10, 15, 20]
-    lrs = [1, 0.5, 0.2, 0.1, 0.01, 0.001]
+    lrs = [1, 0.8, 0.5, 0.2, 0.1, 0.01]
     assert len(lrs) == len(limits) + 1
     for lim, lr in zip(limits, lrs):
         if epoch < lim:
@@ -145,6 +123,7 @@ for epoch in range(300):
     lr = get_learning_rate(epoch)
     print("learning rate = {} and batch size = {}".format(lr, train_dataloader.batch_size))
     for p in optimizer.param_groups:
+        #print(p)
         p['lr'] = lr
 
     total_loss = 0
