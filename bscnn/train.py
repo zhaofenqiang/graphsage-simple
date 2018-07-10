@@ -81,7 +81,7 @@ def train_step(data, target):
 
 def get_learning_rate(epoch):
     limits = [3, 5, 10, 15, 20]
-    lrs = [1, 0.8, 0.5, 0.2, 0.1, 0.01]
+    lrs = [1, 0.5, 0.2, 0.1, 0.01, 0.001]
     assert len(lrs) == len(limits) + 1
     for lim, lr in zip(limits, lrs):
         if epoch < lim:

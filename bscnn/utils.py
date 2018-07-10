@@ -75,7 +75,46 @@ def get_upsample_order(mat_path, order_path):
     upsample_neighs_order = np.zeros((nodes-next_nodes) * 2).astype(np.int64) - 1
     for i in range(next_nodes, nodes):
         raw_neigh_order = list(np.nonzero(adj_mat[i]))[0]
-        upsample_neighs_order[(i-next_nodes)*2:(i-next_nodes)*2+2] = raw_neigh_order[raw_neigh_order < next_nodes]
+        parent_nodes = raw_neigh_order[raw_neigh_order < next_nodes]
+        assert(len(parent_nodes) == 2)
+        upsample_neighs_order[(i-next_nodes)*2:(i-next_nodes)*2+2]= parent_nodes      
     
     return upsample_neighs_order  
         
+
+
+
+def Get_upconv_index():
+    
+    upconv_top_index_10242, upconv_down_index_10242 = get_upconv_index('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat.mat',
+                                                                       '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order.mat')
+    upconv_top_index_2562, upconv_down_index_2562 = get_upconv_index('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat_2562.mat',
+                                                                     '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order_2562.mat')
+    upconv_top_index_642, upconv_down_index_642 = get_upconv_index('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat_642.mat',
+                                                                   '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order_642.mat')
+    upconv_top_index_162, upconv_down_index_162 = get_upconv_index('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat_162.mat',
+                                                                   '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order_162.mat')
+    return upconv_top_index_10242, upconv_down_index_10242,  upconv_top_index_2562, upconv_down_index_2562,  upconv_top_index_642, upconv_down_index_642, upconv_top_index_162, upconv_down_index_162 
+
+def get_upconv_index(mat_path, order_path):  
+    
+    adj_mat = sio.loadmat(mat_path)
+    adj_order = sio.loadmat(order_path)
+    adj_mat = adj_mat[mat_path.split('/')[-1][0:-4]]
+    adj_order = adj_order[order_path.split('/')[-1][0:-4]]
+    nodes = len(adj_mat)
+    next_nodes = int((len(adj_mat)+6)/4)
+    upconv_top_index = np.zeros(next_nodes).astype(np.int64) - 1
+    for i in range(next_nodes):
+        upconv_top_index[i] = i * 7 + 6
+    upconv_down_index = np.zeros((nodes-next_nodes) * 2).astype(np.int64) - 1
+    for i in range(next_nodes, nodes):
+        raw_neigh_order = list(np.nonzero(adj_mat[i]))[0]
+        parent_nodes = raw_neigh_order[raw_neigh_order < next_nodes]
+        assert(len(parent_nodes) == 2)
+        for j in range(len(parent_nodes)):
+            parent_neigh = list(np.nonzero(adj_mat[parent_nodes[j]]))[0]
+            index = np.where(parent_neigh == i)[0][0]
+            upconv_down_index[(i-next_nodes)*2 + j] = parent_nodes[j] * 7 + index
+    
+    return upconv_top_index, upconv_down_index

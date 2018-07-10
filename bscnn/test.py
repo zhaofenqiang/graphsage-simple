@@ -51,26 +51,7 @@ test_dataset_path = '/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/90/tes
 test_dataset = BrainSphere(test_dataset_path)
 test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
-adj_mat = sio.loadmat('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_mat.mat')
-adj_order = sio.loadmat('/media/zfq/WinE/unc/zhengwang/dataset/format_dataset/adj_order.mat')
-adj_mat = adj_mat['adj_mat']
-adj_order = adj_order['adj_order']
-neigh_orders = np.zeros(len(adj_mat) * 7).astype(np.int64) - 1
-for i in range(len(adj_mat)):
-    raw_neigh_order = list(np.nonzero(adj_mat[i]))[0]
-    if len(raw_neigh_order) == 5:
-        order = (adj_order[i][0:-1] - 1).astype(np.int64)
-        correct_neigh_order = raw_neigh_order[order]
-        correct_neigh_order = np.append(correct_neigh_order, i)
-    else:
-        order = (adj_order[i] - 1).astype(np.int64)
-        correct_neigh_order = raw_neigh_order[order]
-    assert(len(correct_neigh_order) == 6)
-    correct_neigh_order = np.append(correct_neigh_order, i)
-    neigh_orders[i*7: (i+1)*7] = correct_neigh_order
-
-
-model = BrainSphereCNN(36, neigh_orders)
+model = BrainSphereCNN(36)
 print("{} paramerters in total".format(sum(x.numel() for x in model.parameters())))
 model.cuda()
 model.load_state_dict(torch.load('/home/zfq/graphsage-simple/state.pkl'))
